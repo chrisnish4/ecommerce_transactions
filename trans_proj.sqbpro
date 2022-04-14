@@ -1,0 +1,208 @@
+<?xml version="1.0" encoding="UTF-8"?><sqlb_project><db path="/Users/chris/Desktop/Data_Science/YT_portfolio_series/sqlite/trans_proj.db" readonly="0" foreign_keys="1" case_sensitive_like="0" temp_store="0" wal_autocheckpoint="1000" synchronous="2"/><attached/><window><main_tabs open="structure browser pragmas query" current="0"/></window><tab_structure><column_width id="0" width="300"/><column_width id="1" width="0"/><column_width id="2" width="100"/><column_width id="3" width="1020"/><column_width id="4" width="0"/><expanded_item id="0" parent="1"/><expanded_item id="1" parent="1"/><expanded_item id="2" parent="1"/><expanded_item id="3" parent="1"/></tab_structure><tab_browse><current_table name="4,10:mainby_invoice"/><default_encoding codec=""/><browse_table_settings><table schema="main" name="by_invoice" show_row_id="0" encoding="" plot_x_axis="" unlock_view_pk="_rowid_"><sort/><column_widths><column index="1" value="60"/><column index="2" value="65"/><column index="3" value="83"/></column_widths><filter_values/><conditional_formats/><row_id_formats/><display_formats/><hidden_columns/><plot_y_axes/><global_filter/></table></browse_table_settings></tab_browse><tab_sql><sql name="Data Cleaning">/*
+
+Data Cleaning
+
+*/
+-- 4070 distinct stockcode
+select *
+from import;
+
+-- Create Country look up table 
+create table country_lookup as 
+	select distinct country
+	from import;
+	
+alter table country_lookup 
+add country_id int;
+
+update country_lookup
+set country_id = rowid;
+
+select * from country_lookup
+
+-- Look up table for description
+create table stockcode_description as 
+	select distinct StockCode, Description 
+	from import
+	group by StockCode
+	order by StockCode;
+
+select * from StockCode_description
+
+-- test 
+select import.Country, country_lookup.country_id
+from import
+join country_lookup on import.Country = country_lookup.Country;
+
+-- Creating final table 
+create table final as 
+	select InvoiceDate, country_id, CustomerId, InvoiceNo, StockCode, Quantity, UnitPrice
+	from import 
+	join country_lookup 
+	on import.Country = country_lookup.Country;
+	
+select *
+from final
+where Quantity &lt; 0;
+
+select * 
+from final
+where CustomerID = 17548
+order by StockCode;
+
+--- Adding transaction type to final TABLE
+
+select *, 
+case 
+	when StockCode = 'B' then 'Debt Payment'
+	when StockCode = 'D' then 'Discount'
+	when StockCode = 'AMAZONFEE' then 'Expense'
+	when Quantity &lt; 0 then 'Return'
+	else 'Sale'
+end as transaction_type
+from final
+
+alter table  final
+add transaction_type text;
+
+update final 
+set transaction_type = 
+	case 
+		when StockCode = 'B' then 'Debt Payment'
+		when StockCode = 'D' then 'Discount'
+		when StockCode = 'AMAZONFEE' then 'Expense'
+		when Quantity &lt; 0 then 'Return'
+		else 'Sale'
+	end;
+	
+select * 
+from final;
+
+---- Creating Final table with country names for Tableau visualization purposes 
+create table final_w_country as 
+	select final.*, country_lookup.Country
+	from final
+	join country_lookup 
+	on final.country_id = country_lookup.country_id;
+
+create table fwc2 as 
+	select InvoiceDate, Country, CustomerID, InvoiceNo, StockCode, Quantity, UnitPrice, transaction_type
+	from final_w_country;
+	
+select * from fwc2</sql><sql name="Data Exploration">/*
+
+Data Exploration
+
+*/
+
+-- Check if data was imported corretly 
+select count(*)
+from import;
+
+select * 
+from import
+limit 1;
+
+-- Date range: Jan 10/2011- Sept 9/2011
+select min(InvoiceDate), max(InvoiceDate)
+from import;
+
+-- Order count and amount spent by country 
+select Country, count(*) as order_count, sum(Quantity*UnitPrice) as revenue
+from import
+group by Country
+order by revenue desc;
+
+-- Top 10 customers by amount spent (11 because many null values ranks as #1)
+select CustomerId, sum(UnitPrice*Quantity) as spent
+from import
+group by CustomerId
+order by spent desc
+limit 11;
+
+-- 10 most popular products by quantity ordered
+select StockCode, count(*) as qty
+from import
+group by StockCode
+order by count(*) desc
+limit 10;
+
+-- Top Product by revenue in each country 
+select Country, StockCode, max(Quantity*UnitPrice) as revenue
+from import
+group by Country;
+
+-- Top 10  products by revenue brought in
+select StockCode, sum(Quantity*UnitPrice) as revenue 
+from import
+group by StockCode
+order by 2 desc
+limit 10; 
+
+-- Avg number of items in an order and avg number of different products in an order
+create table if not exists by_invoice as 
+	select InvoiceNo, sum(Quantity) as num_items, count(*) as num_products
+	from import 
+	group by InvoiceNo;
+select avg(num_items), avg(num_products)
+from by_invoice;
+
+-- Top 5 products in Germany by revenue 
+select StockCode, sum(Quantity*UnitPrice) as rev
+from import
+where Country = 'Germany'
+group by StockCode
+order by rev desc
+limit 5;
+
+-- Distinct customers by country
+select Country, count(distinct customerID) as count
+from import 
+group by Country
+order by 2 desc
+limit 10;
+
+-- Looking at instances where quantity is negative (possible returns)
+---- Looks like fees, discounts, and returns
+select *
+from import 
+where quantity &lt; 0;
+
+
+-- Looking at negative unit price (possible expenses)
+----- Seems to be paying off bad debt
+select * 
+from import 
+where UnitPrice &lt; 0; 
+
+select * -- Quantity=-1 with price of Amazon fee as UnitPrice
+from import 
+where StockCode like '%fee%';
+
+select * 
+from import
+where StockCode ='D';
+
+select * 
+from import
+where StockCode='B';
+
+select * 
+from import 
+
+-- Total Expenses 
+select sum(UnitPrice)
+from final 
+where transaction_type = 'Expense';
+
+-- Total returns
+select sum(UnitPrice)
+from final
+where transaction_type='Return';
+
+-- Total discounts
+select sum(UnitPrice)
+from final
+where transaction_type='Discount';
+
+</sql><current_tab id="0"/></tab_sql></sqlb_project>
